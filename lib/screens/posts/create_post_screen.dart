@@ -61,7 +61,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
   Future<String?> _uploadFile({required bool pdf}) async {
     final result = await FilePicker.platform.pickFiles(
-      type: pdf ? FileType.custom : FileType.image,
+      type: FileType.custom,
       allowedExtensions: pdf ? ['pdf'] : ['jpg', 'jpeg', 'png', 'webp'],
       withData: true,
     );

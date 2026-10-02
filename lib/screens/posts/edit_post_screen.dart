@@ -59,7 +59,7 @@ class _EditPostScreenState extends State<EditPostScreen> {
   Future<void> _pickAttachment({required bool pdf}) async {
     try {
       final result = await FilePicker.platform.pickFiles(
-        type: pdf ? FileType.custom : FileType.image,
+        type: FileType.custom,
         allowedExtensions: pdf ? ['pdf'] : ['jpg', 'jpeg', 'png', 'webp'],
         withData: true,
       );
