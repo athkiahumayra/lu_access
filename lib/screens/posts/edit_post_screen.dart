@@ -1,13 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class EditPostScreen extends StatefulWidget {
   final Map<String, dynamic> post;
 
-  const EditPostScreen({
-    super.key,
-    required this.post,
-  });
+  const EditPostScreen({super.key, required this.post});
 
   @override
   State<EditPostScreen> createState() => _EditPostScreenState();
@@ -16,20 +14,92 @@ class EditPostScreen extends StatefulWidget {
 class _EditPostScreenState extends State<EditPostScreen> {
   final titleController = TextEditingController();
   final descriptionController = TextEditingController();
+  final courseCodeController = TextEditingController();
   final fileUrlController = TextEditingController();
   final imageUrlController = TextEditingController();
 
   bool isSaving = false;
+  bool isAdmin = false;
   String? categoryName;
+  String? selectedFileName;
+  String? selectedImageName;
 
   @override
   void initState() {
     super.initState();
     titleController.text = widget.post['title'] ?? '';
     descriptionController.text = widget.post['description'] ?? '';
+    courseCodeController.text = widget.post['course_code'] ?? '';
     fileUrlController.text = widget.post['file_url'] ?? '';
     imageUrlController.text = widget.post['image_url'] ?? '';
     _loadCategory();
+    _loadRole();
+  }
+
+  Future<void> _loadRole() async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) return;
+
+    try {
+      final profile = await Supabase.instance.client
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .maybeSingle();
+
+      if (!mounted) return;
+      setState(() {
+        isAdmin = (profile?['role'] ?? user.userMetadata?['role']) == 'admin';
+      });
+    } catch (error) {
+      debugPrint('Could not load user role: $error');
+    }
+  }
+
+  Future<void> _pickAttachment({required bool pdf}) async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: pdf ? FileType.custom : FileType.image,
+        allowedExtensions: pdf ? ['pdf'] : ['jpg', 'jpeg', 'png', 'webp'],
+        withData: true,
+      );
+
+      if (result == null || result.files.single.bytes == null) return;
+
+      final file = result.files.single;
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user == null) throw Exception('Please login first.');
+
+      final folder = pdf ? 'notes' : 'images';
+      final extension = file.extension ?? (pdf ? 'pdf' : 'jpg');
+      final path =
+          '$folder/${user.id}/${DateTime.now().millisecondsSinceEpoch}.$extension';
+
+      await Supabase.instance.client.storage
+          .from('uploads')
+          .uploadBinary(
+            path,
+            file.bytes!,
+            fileOptions: const FileOptions(upsert: false),
+          );
+
+      final url = Supabase.instance.client.storage
+          .from('uploads')
+          .getPublicUrl(path);
+
+      if (!mounted) return;
+      setState(() {
+        if (pdf) {
+          fileUrlController.text = url;
+          selectedFileName = 'PDF uploaded';
+        } else {
+          imageUrlController.text = url;
+          selectedImageName = 'Image uploaded';
+        }
+      });
+    } catch (error) {
+      showMessage('Could not upload attachment: $error');
+    }
   }
 
   Future<void> _loadCategory() async {
@@ -53,8 +123,12 @@ class _EditPostScreenState extends State<EditPostScreen> {
   }
 
   bool get isNotesCategory =>
-      categoryName != null &&
-      categoryName!.toLowerCase().contains('notes');
+      categoryName != null && categoryName!.toLowerCase().contains('notes');
+
+  bool get isBusCategory => categoryName?.toLowerCase() == 'bus schedules';
+
+  bool get isProjectCategory =>
+      categoryName?.toLowerCase() == 'project collaboration';
 
   Future<void> updatePost() async {
     final title = titleController.text.trim();
@@ -72,6 +146,11 @@ class _EditPostScreenState extends State<EditPostScreen> {
       return;
     }
 
+    if (isBusCategory && !isAdmin) {
+      showMessage('Only admins can edit Bus Schedules posts.');
+      return;
+    }
+
     setState(() {
       isSaving = true;
     });
@@ -80,13 +159,17 @@ class _EditPostScreenState extends State<EditPostScreen> {
       final updateMap = <String, dynamic>{
         'title': title,
         'description': description,
-        'status': 'pending',
+        'status': isBusCategory ? 'approved' : 'pending',
       };
+
+      if (isProjectCategory) {
+        updateMap['course_code'] = courseCodeController.text.trim();
+      }
 
       if (isNotesCategory && fileUrl.isNotEmpty) {
         updateMap['file_url'] = fileUrl;
       }
-      if (!isNotesCategory && imageUrl.isNotEmpty) {
+      if (!isNotesCategory && !isProjectCategory && imageUrl.isNotEmpty) {
         updateMap['image_url'] = imageUrl;
       }
 
@@ -96,29 +179,36 @@ class _EditPostScreenState extends State<EditPostScreen> {
             .update(updateMap)
             .eq('id', widget.post['id']);
       } catch (updateErr) {
-        debugPrint('Primary update error: $updateErr. Retrying fallback update.');
+        debugPrint(
+          'Primary update error: $updateErr. Retrying fallback update.',
+        );
 
         String fallbackDescription = description;
         if (isNotesCategory && fileUrl.isNotEmpty) {
           fallbackDescription += '\n\n[Attached Notes]: $fileUrl';
         }
-        if (!isNotesCategory && imageUrl.isNotEmpty) {
+        if (!isNotesCategory && !isProjectCategory && imageUrl.isNotEmpty) {
           fallbackDescription += '\n\n[Attached Image]: $imageUrl';
         }
 
-        await Supabase.instance.client.from('posts').update({
-          'title': title,
-          'description': fallbackDescription,
-          'status': 'pending',
-        }).eq('id', widget.post['id']);
+        await Supabase.instance.client
+            .from('posts')
+            .update({
+              'title': title,
+              'description': fallbackDescription,
+              'status': isBusCategory ? 'approved' : 'pending',
+            })
+            .eq('id', widget.post['id']);
       }
 
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text(
-            'Post updated successfully and submitted for admin review.',
+            isBusCategory
+                ? 'Bus schedule updated successfully.'
+                : 'Post updated successfully and submitted for admin review.',
           ),
           backgroundColor: Colors.green,
         ),
@@ -137,15 +227,15 @@ class _EditPostScreenState extends State<EditPostScreen> {
   }
 
   void showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
   void dispose() {
     titleController.dispose();
     descriptionController.dispose();
+    courseCodeController.dispose();
     fileUrlController.dispose();
     imageUrlController.dispose();
     super.dispose();
@@ -154,9 +244,7 @@ class _EditPostScreenState extends State<EditPostScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Edit Post'),
-      ),
+      appBar: AppBar(title: const Text('Edit Post')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -164,10 +252,7 @@ class _EditPostScreenState extends State<EditPostScreen> {
           children: [
             const Text(
               'Edit Post Details',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             const Text(
@@ -193,6 +278,24 @@ class _EditPostScreenState extends State<EditPostScreen> {
             ),
             const SizedBox(height: 20),
 
+            if (isProjectCategory) ...[
+              const Text(
+                'Course Code',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: courseCodeController,
+                decoration: InputDecoration(
+                  hintText: 'Example: CSE 101',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
+
             // Description
             const Text(
               'Description *',
@@ -211,27 +314,26 @@ class _EditPostScreenState extends State<EditPostScreen> {
             ),
             const SizedBox(height: 20),
 
-            // Image Section (Only shown if NOT Notes & Study Materials)
-            if (!isNotesCategory) ...[
+            // Image upload is available for non-notes categories except projects.
+            if (!isNotesCategory && !isProjectCategory) ...[
               const Text(
                 'Image',
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
-              TextField(
-                controller: imageUrlController,
-                decoration: InputDecoration(
-                  hintText: 'Paste image URL or photo link of found item...',
-                  prefixIcon:
-                      const Icon(Icons.image_outlined, color: Colors.blue),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+              OutlinedButton.icon(
+                onPressed: isSaving ? null : () => _pickAttachment(pdf: false),
+                icon: const Icon(Icons.image_outlined),
+                label: Text(
+                  selectedImageName ??
+                      (imageUrlController.text.isEmpty
+                          ? 'Choose image'
+                          : 'Replace image'),
                 ),
               ),
               const SizedBox(height: 6),
               const Text(
-                'Students can upload/share a photo link of the found item or post image.',
+                'Choose a JPG, PNG, or WEBP image.',
                 style: TextStyle(fontSize: 12, color: Colors.grey),
               ),
               const SizedBox(height: 20),
@@ -245,21 +347,19 @@ class _EditPostScreenState extends State<EditPostScreen> {
               ),
               const SizedBox(height: 8),
 
-              TextField(
-                controller: fileUrlController,
-                decoration: InputDecoration(
-                  labelText: 'PDF / Document Link',
-                  hintText: 'Paste Google Drive, PDF, or Document link...',
-                  prefixIcon:
-                      const Icon(Icons.picture_as_pdf_rounded, color: Colors.blue),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+              OutlinedButton.icon(
+                onPressed: isSaving ? null : () => _pickAttachment(pdf: true),
+                icon: const Icon(Icons.picture_as_pdf_rounded),
+                label: Text(
+                  selectedFileName ??
+                      (fileUrlController.text.isEmpty
+                          ? 'Choose PDF'
+                          : 'Replace PDF'),
                 ),
               ),
               const SizedBox(height: 6),
               const Text(
-                'Upload your notes link (e.g. Google Drive, Dropbox, PDF link) for students to download.',
+                'Choose one PDF file for students to download.',
                 style: TextStyle(fontSize: 12, color: Colors.grey),
               ),
               const SizedBox(height: 30),
@@ -277,8 +377,10 @@ class _EditPostScreenState extends State<EditPostScreen> {
                         width: 24,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Text(
-                        'Save & Resubmit Post',
+                    : Text(
+                        isBusCategory
+                            ? 'Save Bus Schedule'
+                            : 'Save & Resubmit Post',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,

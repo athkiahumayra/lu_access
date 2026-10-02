@@ -4,10 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class EditProfileScreen extends StatefulWidget {
   final Map<String, dynamic>? profile;
 
-  const EditProfileScreen({
-    super.key,
-    this.profile,
-  });
+  const EditProfileScreen({super.key, this.profile});
 
   @override
   State<EditProfileScreen> createState() => _EditProfileScreenState();
@@ -19,7 +16,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late TextEditingController studentIdController;
   late TextEditingController departmentController;
 
-  String selectedRole = 'student';
   bool isSaving = false;
 
   @override
@@ -34,9 +30,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     departmentController = TextEditingController(
       text: widget.profile?['department'] ?? '',
     );
-
-    final currentRole = (widget.profile?['role'] ?? 'student').toString().toLowerCase();
-    selectedRole = currentRole == 'admin' ? 'admin' : 'student';
   }
 
   @override
@@ -69,7 +62,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             'full_name': name,
             'student_id': studentId,
             'department': dept,
-            'role': selectedRole,
+            'role': widget.profile?['role'] ?? 'student',
             'email': user.email ?? '',
           })
           .eq('id', user.id)
@@ -83,7 +76,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           'full_name': name,
           'student_id': studentId,
           'department': dept,
-          'role': selectedRole,
+          'role': widget.profile?['role'] ?? 'student',
         });
       }
 
@@ -94,7 +87,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             'full_name': name,
             'student_id': studentId,
             'department': dept,
-            'role': selectedRole,
           },
         ),
       );
@@ -102,9 +94,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Profile saved successfully!'),
-        ),
+        const SnackBar(content: Text('Profile saved successfully!')),
       );
 
       Navigator.pop(context, true);
@@ -113,11 +103,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to save profile: $error'),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to save profile: $error')));
     } finally {
       if (mounted) {
         setState(() {
@@ -130,9 +118,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Edit Profile'),
-      ),
+      appBar: AppBar(title: const Text('Edit Profile')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Form(
@@ -178,44 +164,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   border: OutlineInputBorder(),
                 ),
               ),
-              const SizedBox(height: 20),
-
-              // Role Selector Dropdown
-              const Text(
-                'Account Role',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 15,
-                ),
-              ),
-              const SizedBox(height: 8),
-              DropdownButtonFormField<String>(
-                initialValue: selectedRole,
-                decoration: InputDecoration(
-                  prefixIcon: const Icon(Icons.badge_outlined),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                items: const [
-                  DropdownMenuItem(
-                    value: 'student',
-                    child: Text('Student'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'admin',
-                    child: Text('Admin'),
-                  ),
-                ],
-                onChanged: (val) {
-                  if (val != null) {
-                    setState(() {
-                      selectedRole = val;
-                    });
-                  }
-                },
-              ),
-
               const SizedBox(height: 30),
               SizedBox(
                 height: 50,

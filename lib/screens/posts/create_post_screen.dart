@@ -1,13 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class CreatePostScreen extends StatefulWidget {
   final String? initialCategoryName;
 
-  const CreatePostScreen({
-    super.key,
-    this.initialCategoryName,
-  });
+  const CreatePostScreen({super.key, this.initialCategoryName});
 
   @override
   State<CreatePostScreen> createState() => _CreatePostScreenState();
@@ -16,20 +14,109 @@ class CreatePostScreen extends StatefulWidget {
 class _CreatePostScreenState extends State<CreatePostScreen> {
   final titleController = TextEditingController();
   final descriptionController = TextEditingController();
-  final fileUrlController = TextEditingController();
-  final imageUrlController = TextEditingController();
+  final courseCodeController = TextEditingController();
 
   bool isSubmitting = false;
+  bool isAdmin = false;
+  String? fileUrl;
+  String? imageUrl;
+  String? selectedFileName;
+  String? selectedImageName;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRole();
+  }
 
   bool get isNotesCategory =>
       widget.initialCategoryName != null &&
       widget.initialCategoryName!.toLowerCase().contains('notes');
 
+  bool get isBusCategory =>
+      widget.initialCategoryName?.toLowerCase() == 'bus schedules';
+
+  bool get isProjectCategory =>
+      widget.initialCategoryName?.toLowerCase() == 'project collaboration';
+
+  Future<void> _loadRole() async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) return;
+
+    try {
+      final profile = await Supabase.instance.client
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .maybeSingle();
+
+      if (!mounted) return;
+      setState(() {
+        isAdmin = (profile?['role'] ?? user.userMetadata?['role']) == 'admin';
+      });
+    } catch (error) {
+      debugPrint('Could not load user role: $error');
+    }
+  }
+
+  Future<String?> _uploadFile({required bool pdf}) async {
+    final result = await FilePicker.platform.pickFiles(
+      type: pdf ? FileType.custom : FileType.image,
+      allowedExtensions: pdf ? ['pdf'] : ['jpg', 'jpeg', 'png', 'webp'],
+      withData: true,
+    );
+
+    if (result == null || result.files.single.bytes == null) return null;
+
+    final file = result.files.single;
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) throw Exception('Please login first.');
+
+    final folder = pdf ? 'notes' : 'images';
+    final extension = file.extension ?? (pdf ? 'pdf' : 'jpg');
+    final path =
+        '$folder/${user.id}/${DateTime.now().millisecondsSinceEpoch}.$extension';
+
+    await Supabase.instance.client.storage
+        .from('uploads')
+        .uploadBinary(
+          path,
+          file.bytes!,
+          fileOptions: FileOptions(upsert: false),
+        );
+
+    return Supabase.instance.client.storage.from('uploads').getPublicUrl(path);
+  }
+
+  Future<void> _pickPdf() async {
+    try {
+      final url = await _uploadFile(pdf: true);
+      if (url == null || !mounted) return;
+      setState(() {
+        fileUrl = url;
+        selectedFileName = 'PDF uploaded';
+      });
+    } catch (error) {
+      showMessage('Could not upload PDF: $error');
+    }
+  }
+
+  Future<void> _pickImage() async {
+    try {
+      final url = await _uploadFile(pdf: false);
+      if (url == null || !mounted) return;
+      setState(() {
+        imageUrl = url;
+        selectedImageName = 'Image uploaded';
+      });
+    } catch (error) {
+      showMessage('Could not upload image: $error');
+    }
+  }
+
   Future<void> createPost() async {
     final title = titleController.text.trim();
     final description = descriptionController.text.trim();
-    final fileUrl = fileUrlController.text.trim();
-    final imageUrl = imageUrlController.text.trim();
 
     if (title.isEmpty) {
       showMessage('Please enter a title.');
@@ -38,6 +125,16 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
     if (description.isEmpty) {
       showMessage('Please enter a description.');
+      return;
+    }
+
+    if (isBusCategory && !isAdmin) {
+      showMessage('Only admins can create Bus Schedules posts.');
+      return;
+    }
+
+    if (isNotesCategory && fileUrl == null) {
+      showMessage('Please upload a PDF.');
       return;
     }
 
@@ -62,7 +159,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             .maybeSingle();
 
         if (profileCheck == null) {
-          final fullName = user.userMetadata?['full_name'] ??
+          final fullName =
+              user.userMetadata?['full_name'] ??
               (user.email != null && user.email!.contains('@')
                   ? user.email!.split('@')[0]
                   : 'Student');
@@ -84,8 +182,10 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       if (widget.initialCategoryName != null &&
           widget.initialCategoryName!.trim().isNotEmpty) {
         try {
-          final catSearch = widget.initialCategoryName!
-              .replaceAll("Notes & Study Materials", "Notes");
+          final catSearch = widget.initialCategoryName!.replaceAll(
+            "Notes & Study Materials",
+            "Notes",
+          );
           final catList = await Supabase.instance.client
               .from('categories')
               .select('id')
@@ -105,18 +205,22 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         'title': title,
         'description': description,
         'price': 0.0,
-        'status': 'pending',
+        'status': isBusCategory ? 'approved' : 'pending',
       };
 
       if (categoryId != null) {
         postMap['category_id'] = categoryId;
       }
 
-      if (isNotesCategory && fileUrl.isNotEmpty) {
+      if (isProjectCategory && courseCodeController.text.trim().isNotEmpty) {
+        postMap['course_code'] = courseCodeController.text.trim();
+      }
+
+      if (isNotesCategory && fileUrl != null) {
         postMap['file_url'] = fileUrl;
       }
 
-      if (!isNotesCategory && imageUrl.isNotEmpty) {
+      if (!isNotesCategory && !isProjectCategory && imageUrl != null) {
         postMap['image_url'] = imageUrl;
       }
 
@@ -124,13 +228,15 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       try {
         await Supabase.instance.client.from('posts').insert(postMap);
       } catch (insertErr) {
-        debugPrint('Primary insert error: $insertErr. Retrying fallback insert.');
+        debugPrint(
+          'Primary insert error: $insertErr. Retrying fallback insert.',
+        );
 
         String fallbackDescription = description;
-        if (isNotesCategory && fileUrl.isNotEmpty) {
+        if (isNotesCategory && fileUrl != null) {
           fallbackDescription += '\n\n[Attached Notes]: $fileUrl';
         }
-        if (!isNotesCategory && imageUrl.isNotEmpty) {
+        if (!isNotesCategory && !isProjectCategory && imageUrl != null) {
           fallbackDescription += '\n\n[Attached Image]: $imageUrl';
         }
 
@@ -139,7 +245,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           'title': title,
           'description': fallbackDescription,
           'price': 0.0,
-          'status': 'pending',
+          'status': isBusCategory ? 'approved' : 'pending',
         };
 
         if (categoryId != null) {
@@ -153,7 +259,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             'user_id': user.id,
             'title': title,
             'description': fallbackDescription,
-            'status': 'pending',
+            'status': isBusCategory ? 'approved' : 'pending',
           };
           await Supabase.instance.client.from('posts').insert(basicMap);
         }
@@ -166,9 +272,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text(
-            'Post submitted successfully! Waiting for admin approval.',
+            isBusCategory
+                ? 'Bus schedule published successfully.'
+                : 'Post submitted successfully! Waiting for admin approval.',
           ),
           backgroundColor: Colors.green,
         ),
@@ -176,8 +284,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
       titleController.clear();
       descriptionController.clear();
-      fileUrlController.clear();
-      imageUrlController.clear();
+      courseCodeController.clear();
+      fileUrl = null;
+      imageUrl = null;
 
       Navigator.pop(context, true);
     } catch (error) {
@@ -192,19 +301,15 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   }
 
   void showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-      ),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
   void dispose() {
     titleController.dispose();
     descriptionController.dispose();
-    fileUrlController.dispose();
-    imageUrlController.dispose();
+    courseCodeController.dispose();
     super.dispose();
   }
 
@@ -212,9 +317,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.initialCategoryName != null
-            ? 'Create ${widget.initialCategoryName}'
-            : 'Create Post'),
+        title: Text(
+          widget.initialCategoryName != null
+              ? 'Create ${widget.initialCategoryName}'
+              : 'Create Post',
+        ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
@@ -225,30 +332,23 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               widget.initialCategoryName == 'Notes & Study Materials'
                   ? 'Upload Lecture Notes & Study Materials'
                   : widget.initialCategoryName == 'Lost and Found'
-                      ? 'Post Lost or Found Item'
-                      : 'Create a New Post',
-              style: const TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
+                  ? 'Post Lost or Found Item'
+                  : 'Create a New Post',
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             Text(
               isNotesCategory
                   ? 'Share lecture notes and study materials with LU students.'
                   : 'Share details, photos, or announcements with LU students.',
-              style: const TextStyle(
-                color: Colors.grey,
-              ),
+              style: const TextStyle(color: Colors.grey),
             ),
             const SizedBox(height: 25),
 
             // Title
             const Text(
               'Post Title *',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             TextField(
@@ -267,9 +367,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             // Description
             const Text(
               'Description *',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             TextField(
@@ -284,33 +382,40 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             ),
             const SizedBox(height: 20),
 
-            // Image Option (Shown for Lost and Found & non-Notes categories)
-            if (!isNotesCategory) ...[
+            if (isProjectCategory) ...[
               const Text(
-                'Image',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                ),
+                'Course Code',
+                style: TextStyle(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
               TextField(
-                controller: imageUrlController,
+                controller: courseCodeController,
                 decoration: InputDecoration(
-                  hintText: 'Paste image URL or photo link of found item...',
-                  prefixIcon:
-                      const Icon(Icons.image_outlined, color: Colors.blue),
+                  hintText: 'Example: CSE 101',
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
               ),
+              const SizedBox(height: 20),
+            ],
+
+            // Image upload is available for non-notes categories except projects.
+            if (!isNotesCategory && !isProjectCategory) ...[
+              const Text(
+                'Image',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: isSubmitting ? null : _pickImage,
+                icon: const Icon(Icons.image_outlined),
+                label: Text(selectedImageName ?? 'Choose image'),
+              ),
               const SizedBox(height: 6),
               const Text(
-                'Students can upload/share a photo link of the found item or post image.',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey,
-                ),
+                'Choose a JPG, PNG, or WEBP image.',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
               ),
               const SizedBox(height: 20),
             ],
@@ -319,31 +424,19 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             if (isNotesCategory) ...[
               const Text(
                 'Upload PDF Notes or Document Link *',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
 
-              TextField(
-                controller: fileUrlController,
-                decoration: InputDecoration(
-                  labelText: 'PDF / Document Link',
-                  hintText: 'Paste Google Drive, Dropbox, or PDF link...',
-                  prefixIcon:
-                      const Icon(Icons.picture_as_pdf_rounded, color: Colors.blue),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
+              OutlinedButton.icon(
+                onPressed: isSubmitting ? null : _pickPdf,
+                icon: const Icon(Icons.picture_as_pdf_rounded),
+                label: Text(selectedFileName ?? 'Choose PDF'),
               ),
               const SizedBox(height: 6),
               const Text(
-                'Paste direct link to Google Drive, Dropbox, or PDF document file.',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey,
-                ),
+                'Choose one PDF file to attach to this post.',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
               ),
               const SizedBox(height: 30),
             ],
@@ -358,12 +451,12 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                     ? const SizedBox(
                         height: 24,
                         width: 24,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                        ),
+                        child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Text(
-                        'Submit Post for Approval',
+                    : Text(
+                        isBusCategory
+                            ? 'Publish Bus Schedule'
+                            : 'Submit Post for Approval',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,

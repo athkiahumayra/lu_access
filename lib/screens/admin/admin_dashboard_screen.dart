@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../posts/create_post_screen.dart';
 import '../posts/post_details_screen.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
@@ -136,15 +138,23 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     filteredPending = pendingPosts.where((p) {
       final title = (p['title'] ?? '').toString().toLowerCase();
       final desc = (p['description'] ?? '').toString().toLowerCase();
-      final author = (p['profiles']?['full_name'] ?? '').toString().toLowerCase();
-      return title.contains(lower) || desc.contains(lower) || author.contains(lower);
+      final author = (p['profiles']?['full_name'] ?? '')
+          .toString()
+          .toLowerCase();
+      return title.contains(lower) ||
+          desc.contains(lower) ||
+          author.contains(lower);
     }).toList();
 
     filteredApproved = approvedPosts.where((p) {
       final title = (p['title'] ?? '').toString().toLowerCase();
       final desc = (p['description'] ?? '').toString().toLowerCase();
-      final author = (p['profiles']?['full_name'] ?? '').toString().toLowerCase();
-      return title.contains(lower) || desc.contains(lower) || author.contains(lower);
+      final author = (p['profiles']?['full_name'] ?? '')
+          .toString()
+          .toLowerCase();
+      return title.contains(lower) ||
+          desc.contains(lower) ||
+          author.contains(lower);
     }).toList();
 
     filteredUsers = allUsers.where((u) {
@@ -161,9 +171,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   Future<void> updatePostStatus(int postId, String status) async {
     try {
-      await supabase.from('posts').update({
-        'status': status,
-      }).eq('id', postId);
+      await supabase.from('posts').update({'status': status}).eq('id', postId);
 
       await loadAllAdminData();
 
@@ -190,12 +198,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     }
   }
 
-  Future<void> updateUserRole(String userId, String currentRole, String newRole) async {
+  Future<void> updateUserRole(
+    String userId,
+    String currentRole,
+    String newRole,
+  ) async {
     try {
       // 1. Try update DB table
-      await supabase.from('profiles').update({
-        'role': newRole,
-      }).eq('id', userId);
+      await supabase
+          .from('profiles')
+          .update({'role': newRole})
+          .eq('id', userId);
 
       await loadAllAdminData();
 
@@ -208,9 +221,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   void showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> confirmAction(Map<String, dynamic> post, String status) async {
@@ -271,6 +283,28 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Admin Dashboard'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              tooltip: 'Refresh admin data',
+              onPressed: loadAllAdminData,
+            ),
+            IconButton(
+              icon: const Icon(Icons.directions_bus_outlined),
+              tooltip: 'Create Bus Schedule',
+              onPressed: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const CreatePostScreen(
+                      initialCategoryName: 'Bus Schedules',
+                    ),
+                  ),
+                );
+                loadAllAdminData();
+              },
+            ),
+          ],
           bottom: TabBar(
             tabs: [
               Tab(
@@ -506,7 +540,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           ),
                         ),
                         IconButton(
-                          icon: const Icon(Icons.delete_forever, color: Colors.red),
+                          icon: const Icon(
+                            Icons.delete_forever,
+                            color: Colors.red,
+                          ),
                           tooltip: 'Remove Post',
                           onPressed: () async {
                             final confirm = await showDialog<bool>(
@@ -514,10 +551,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                               builder: (context) => AlertDialog(
                                 title: const Text('Delete Post'),
                                 content: const Text(
-                                    'Are you sure you want to delete this live post?'),
+                                  'Are you sure you want to delete this live post?',
+                                ),
                                 actions: [
                                   TextButton(
-                                    onPressed: () => Navigator.pop(context, false),
+                                    onPressed: () =>
+                                        Navigator.pop(context, false),
                                     child: const Text('Cancel'),
                                   ),
                                   ElevatedButton(
@@ -525,7 +564,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                       backgroundColor: Colors.red,
                                       foregroundColor: Colors.white,
                                     ),
-                                    onPressed: () => Navigator.pop(context, true),
+                                    onPressed: () =>
+                                        Navigator.pop(context, true),
                                     child: const Text('Delete'),
                                   ),
                                 ],
@@ -604,7 +644,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             child: ListTile(
               contentPadding: const EdgeInsets.all(14),
               leading: CircleAvatar(
-                backgroundColor: isAdminRole ? Colors.deepOrange.shade100 : Colors.blue.shade100,
+                backgroundColor: isAdminRole
+                    ? Colors.deepOrange.shade100
+                    : Colors.blue.shade100,
                 child: Icon(
                   isAdminRole ? Icons.admin_panel_settings : Icons.person,
                   color: isAdminRole ? Colors.deepOrange : Colors.blue,
@@ -620,7 +662,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               ),
               trailing: ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: isAdminRole ? Colors.grey.shade200 : Colors.deepOrange,
+                  backgroundColor: isAdminRole
+                      ? Colors.grey.shade200
+                      : Colors.deepOrange,
                   foregroundColor: isAdminRole ? Colors.black87 : Colors.white,
                   elevation: 1,
                 ),

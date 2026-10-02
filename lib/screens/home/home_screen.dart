@@ -44,7 +44,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
       if (!mounted) return;
 
-      final name = profile?['full_name'] ??
+      final name =
+          profile?['full_name'] ??
           user.userMetadata?['full_name'] ??
           (user.email != null && user.email!.contains('@')
               ? user.email!.split('@')[0]
@@ -75,9 +76,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     Navigator.pushAndRemoveUntil(
       context,
-      MaterialPageRoute(
-        builder: (_) => const LoginScreen(),
-      ),
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
       (route) => false,
     );
   }
@@ -97,7 +96,10 @@ class _HomeScreenState extends State<HomeScreen> {
         actions: [
           if (userRole == 'admin' && _currentIndex == 0)
             IconButton(
-              icon: const Icon(Icons.admin_panel_settings, color: Colors.deepOrange),
+              icon: const Icon(
+                Icons.admin_panel_settings,
+                color: Colors.deepOrange,
+              ),
               tooltip: 'Admin Dashboard',
               onPressed: () {
                 setState(() {
@@ -111,9 +113,7 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(
-                  builder: (_) => const MessagesScreen(),
-                ),
+                MaterialPageRoute(builder: (_) => const MessagesScreen()),
               );
             },
           ),
@@ -138,9 +138,7 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => const CreatePostScreen(),
-                  ),
+                  MaterialPageRoute(builder: (_) => const CreatePostScreen()),
                 );
               },
               icon: const Icon(Icons.add),
@@ -167,10 +165,7 @@ class _HomeScreenState extends State<HomeScreen> {
           });
         },
         items: [
-          const BottomNavigationBarItem(
-            icon: Icon(Icons.home),
-            label: 'Home',
-          ),
+          const BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
           const BottomNavigationBarItem(
             icon: Icon(Icons.person),
             label: 'Student Profile',
@@ -216,23 +211,23 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           Text(
             isLoading ? 'Loading...' : 'Welcome, $studentName',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
+            style: Theme.of(context).textTheme.headlineSmall
+                ?.copyWith(fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 6),
           Row(
             children: [
               const Text(
                 'Leading University Student Portal',
-                style: TextStyle(
-                  color: Colors.grey,
-                ),
+                style: TextStyle(color: Colors.grey),
               ),
               if (userRole == 'admin') ...[
                 const SizedBox(width: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.deepOrange.shade100,
                     borderRadius: BorderRadius.circular(10),
@@ -255,7 +250,10 @@ class _HomeScreenState extends State<HomeScreen> {
             Card(
               color: Colors.deepOrange.shade50,
               child: ListTile(
-                leading: const Icon(Icons.admin_panel_settings, color: Colors.deepOrange),
+                leading: const Icon(
+                  Icons.admin_panel_settings,
+                  color: Colors.deepOrange,
+                ),
                 title: const Text(
                   'Admin Moderation Dashboard',
                   style: TextStyle(fontWeight: FontWeight.bold),
@@ -275,10 +273,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
           const Text(
             'Campus Services',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-            ),
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
 
           const SizedBox(height: 15),
@@ -314,9 +309,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => const PostsScreen(
-                        categoryName: 'Lost and Found',
-                      ),
+                      builder: (_) =>
+                          const PostsScreen(categoryName: 'Lost and Found'),
                     ),
                   );
                 },
@@ -337,21 +331,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 },
               ),
               _serviceCard(
-                icon: Icons.handyman,
-                title: 'Skills & Services',
-                color: const Color(0xFFF3E5F5),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const PostsScreen(
-                        categoryName: 'Skills & Services',
-                      ),
-                    ),
-                  );
-                },
-              ),
-              _serviceCard(
                 icon: Icons.info,
                 title: 'Campus Information',
                 color: const Color(0xFFFFEBEE),
@@ -359,9 +338,22 @@ class _HomeScreenState extends State<HomeScreen> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => const PostsScreen(
-                        categoryName: 'Campus Information',
-                      ),
+                      builder: (_) =>
+                          const PostsScreen(categoryName: 'Campus Information'),
+                    ),
+                  );
+                },
+              ),
+              _serviceCard(
+                icon: Icons.directions_bus_outlined,
+                title: 'Bus Schedules',
+                color: const Color(0xFFE8EAF6),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          const PostsScreen(categoryName: 'Bus Schedules'),
                     ),
                   );
                 },
@@ -373,9 +365,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 onTap: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(
-                      builder: (_) => const SearchScreen(),
-                    ),
+                    MaterialPageRoute(builder: (_) => const SearchScreen()),
                   );
                 },
               ),
@@ -395,9 +385,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Card(
       elevation: 2,
       color: color,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(14),
@@ -406,11 +394,7 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                icon,
-                size: 32,
-                color: Colors.blueGrey.shade800,
-              ),
+              Icon(icon, size: 32, color: Colors.blueGrey.shade800),
               const SizedBox(height: 8),
               Text(
                 title,

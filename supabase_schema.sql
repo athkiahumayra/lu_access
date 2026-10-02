@@ -25,11 +25,13 @@ CREATE TABLE IF NOT EXISTS public.categories (
 INSERT INTO public.categories (name)
 VALUES
     ('Notes & Study Materials'),
-    ('Lost and Found'),
+    -- ('Lost and Found'),
     ('Project Collaboration'),
-    ('Skills & Services'),
-    ('Campus Information')
+    ('Campus Information'),
+    ('Bus Schedules')
 ON CONFLICT (name) DO NOTHING;
+
+DELETE FROM public.categories WHERE name = 'Skills & Services';
 
 -- 3. Create POSTS Table
 CREATE TABLE IF NOT EXISTS public.posts (
@@ -42,6 +44,7 @@ CREATE TABLE IF NOT EXISTS public.posts (
     phone_number TEXT,
     file_url TEXT,
     image_url TEXT,
+    course_code TEXT,
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
@@ -50,6 +53,22 @@ CREATE TABLE IF NOT EXISTS public.posts (
 UPDATE public.categories SET name = 'Lost and Found' WHERE name = 'Books';
 ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS file_url TEXT;
 ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS image_url TEXT;
+ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS course_code TEXT;
+
+UPDATE public.posts
+SET category_id = (
+    SELECT id FROM public.categories WHERE name = 'Bus Schedules'
+),
+    status = 'approved'
+WHERE category_id = (
+    SELECT id FROM public.categories WHERE name = 'Bus'
+)
+AND EXISTS (
+    SELECT 1 FROM public.categories WHERE name = 'Bus Schedules'
+);
+
+DELETE FROM public.categories
+WHERE name = 'Bus';
 
 -- 4. Create MESSAGES Table
 CREATE TABLE IF NOT EXISTS public.messages (
@@ -80,28 +99,72 @@ CREATE POLICY "Users can insert their own profile" ON public.profiles
 CREATE POLICY "Users can update their own profile" ON public.profiles
     FOR UPDATE USING (auth.uid() = id);
 
+-- Prevent students from changing their own role while allowing admins to manage roles.
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN
+LANGUAGE SQL
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT EXISTS (
+        SELECT 1 FROM public.profiles
+        WHERE id = auth.uid() AND role = 'admin'
+    );
+$$;
+
+DROP POLICY IF EXISTS "Users can update their own profile" ON public.profiles;
+CREATE POLICY "Users can update their own profile" ON public.profiles
+    FOR UPDATE
+    USING (auth.uid() = id OR public.is_admin())
+    WITH CHECK (
+        public.is_admin()
+        OR (auth.uid() = id AND role = 'student')
+    );
+
+CREATE POLICY "Admins can update user roles" ON public.profiles
+    FOR UPDATE
+    USING (public.is_admin())
+    WITH CHECK (public.is_admin());
+
 -- Categories Policies
 CREATE POLICY "Categories are viewable by everyone" ON public.categories
     FOR SELECT USING (true);
 
 -- Posts Policies
 CREATE POLICY "Approved posts are viewable by everyone" ON public.posts
-    FOR SELECT USING (status = 'approved' OR auth.uid() = user_id OR EXISTS (
-        SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin'
-    ));
+    FOR SELECT USING (status = 'approved' OR auth.uid() = user_id OR public.is_admin());
 
+DROP POLICY IF EXISTS "Authenticated users can insert posts" ON public.posts;
 CREATE POLICY "Authenticated users can insert posts" ON public.posts
-    FOR INSERT WITH CHECK (auth.uid() = user_id);
+    FOR INSERT WITH CHECK (
+        auth.uid() = user_id
+        AND (
+            category_id IS NULL
+            OR NOT EXISTS (
+                SELECT 1 FROM public.categories
+                WHERE id = category_id AND name = 'Bus Schedules'
+            )
+            OR public.is_admin()
+        )
+    );
 
+DROP POLICY IF EXISTS "Users can update their own posts or admins can update status" ON public.posts;
 CREATE POLICY "Users can update their own posts or admins can update status" ON public.posts
-    FOR UPDATE USING (auth.uid() = user_id OR EXISTS (
-        SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin'
-    ));
+    FOR UPDATE
+    USING (auth.uid() = user_id OR public.is_admin())
+    WITH CHECK (
+        public.is_admin()
+        OR (
+            auth.uid() = user_id
+            AND NOT EXISTS (
+                SELECT 1 FROM public.categories
+                WHERE id = category_id AND name = 'Bus Schedules'
+            )
+        )
+    );
 
 CREATE POLICY "Users can delete their own posts or admins can delete" ON public.posts
-    FOR DELETE USING (auth.uid() = user_id OR EXISTS (
-        SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin'
-    ));
+    FOR DELETE USING (auth.uid() = user_id OR public.is_admin());
 
 -- Messages Policies
 CREATE POLICY "Users can view messages sent or received by them" ON public.messages
@@ -115,8 +178,18 @@ INSERT INTO storage.buckets (id, name, public)
 VALUES ('notes', 'notes', true)
 ON CONFLICT (id) DO NOTHING;
 
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('uploads', 'uploads', true)
+ON CONFLICT (id) DO NOTHING;
+
 CREATE POLICY "Public Read Notes" ON storage.objects
     FOR SELECT USING (bucket_id = 'notes');
 
 CREATE POLICY "Authenticated Upload Notes" ON storage.objects
     FOR INSERT WITH CHECK (bucket_id = 'notes' AND auth.role() = 'authenticated');
+
+CREATE POLICY "Public Read Uploads" ON storage.objects
+    FOR SELECT USING (bucket_id = 'uploads');
+
+CREATE POLICY "Authenticated Upload Files" ON storage.objects
+    FOR INSERT WITH CHECK (bucket_id = 'uploads' AND auth.role() = 'authenticated');

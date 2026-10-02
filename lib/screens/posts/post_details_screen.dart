@@ -9,10 +9,7 @@ import 'edit_post_screen.dart';
 class PostDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> post;
 
-  const PostDetailsScreen({
-    super.key,
-    required this.post,
-  });
+  const PostDetailsScreen({super.key, required this.post});
 
   @override
   State<PostDetailsScreen> createState() => _PostDetailsScreenState();
@@ -20,11 +17,51 @@ class PostDetailsScreen extends StatefulWidget {
 
 class _PostDetailsScreenState extends State<PostDetailsScreen> {
   late Map<String, dynamic> postData;
+  String? categoryName;
+  bool isAdmin = false;
 
   @override
   void initState() {
     super.initState();
     postData = Map<String, dynamic>.from(widget.post);
+    _loadCategory();
+    _loadRole();
+  }
+
+  Future<void> _loadRole() async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) return;
+
+    final profile = await Supabase.instance.client
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .maybeSingle();
+
+    if (!mounted) return;
+    setState(() {
+      isAdmin = (profile?['role'] ?? user.userMetadata?['role']) == 'admin';
+    });
+  }
+
+  Future<void> _loadCategory() async {
+    final categoryId = postData['category_id'];
+    if (categoryId == null) return;
+
+    try {
+      final category = await Supabase.instance.client
+          .from('categories')
+          .select('name')
+          .eq('id', categoryId)
+          .maybeSingle();
+
+      if (!mounted) return;
+      setState(() {
+        categoryName = category?['name']?.toString();
+      });
+    } catch (error) {
+      debugPrint('Could not load post category: $error');
+    }
   }
 
   Future<void> _openFileUrl(String urlString) async {
@@ -43,7 +80,9 @@ class _PostDetailsScreenState extends State<PostDetailsScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Could not open link directly. Copied link to clipboard!'),
+          content: Text(
+            'Could not open link directly. Copied link to clipboard!',
+          ),
         ),
       );
     }
@@ -55,7 +94,7 @@ class _PostDetailsScreenState extends State<PostDetailsScreen> {
           .from('posts')
           .select('''
             *,
-            profiles(full_name, department)
+            profiles(id, full_name, department)
           ''')
           .eq('id', postData['id'])
           .single();
@@ -111,9 +150,9 @@ class _PostDetailsScreenState extends State<PostDetailsScreen> {
     } catch (error) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to delete post: $error')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to delete post: $error')));
     }
   }
 
@@ -139,6 +178,9 @@ class _PostDetailsScreenState extends State<PostDetailsScreen> {
         ? profile['full_name'] ?? 'Student'
         : 'Student';
     final department = profile?['department'];
+    final authorId = profile?['id']?.toString();
+    final isProjectPost =
+        categoryName?.toLowerCase() == 'project collaboration';
 
     return Scaffold(
       appBar: AppBar(
@@ -149,7 +191,7 @@ class _PostDetailsScreenState extends State<PostDetailsScreen> {
             tooltip: 'Share / Copy',
             onPressed: _sharePost,
           ),
-          if (isMyPost) ...[
+          if (isMyPost || isAdmin) ...[
             IconButton(
               icon: const Icon(Icons.edit_outlined),
               tooltip: 'Edit Post',
@@ -181,29 +223,33 @@ class _PostDetailsScreenState extends State<PostDetailsScreen> {
             // Title
             Text(
               postData['title'] ?? '',
-              style: const TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
             ),
+
+            if (categoryName?.toLowerCase() == 'project collaboration' &&
+                postData['course_code'] != null &&
+                postData['course_code'].toString().trim().isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                postData['course_code'].toString(),
+                style: const TextStyle(
+                  color: Colors.blue,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
 
             const SizedBox(height: 20),
 
             // Description
             const Text(
               'Description',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             Text(
               postData['description'] ?? '',
-              style: const TextStyle(
-                fontSize: 16,
-                height: 1.5,
-              ),
+              style: const TextStyle(fontSize: 16, height: 1.5),
             ),
 
             const SizedBox(height: 20),
@@ -213,10 +259,7 @@ class _PostDetailsScreenState extends State<PostDetailsScreen> {
                 postData['image_url'].toString().trim().isNotEmpty) ...[
               const Text(
                 'Image',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 10),
               ClipRRect(
@@ -237,8 +280,11 @@ class _PostDetailsScreenState extends State<PostDetailsScreen> {
                       child: const Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.broken_image_outlined,
-                              size: 40, color: Colors.grey),
+                          Icon(
+                            Icons.broken_image_outlined,
+                            size: 40,
+                            color: Colors.grey,
+                          ),
                           SizedBox(height: 6),
                           Text(
                             'Could not load image from URL',
@@ -258,10 +304,7 @@ class _PostDetailsScreenState extends State<PostDetailsScreen> {
                 postData['file_url'].toString().trim().isNotEmpty) ...[
               const Text(
                 'Uploaded Notes & Materials',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 10),
               Card(
@@ -317,7 +360,9 @@ class _PostDetailsScreenState extends State<PostDetailsScreen> {
                           backgroundColor: Colors.blue,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
                         ),
                         onPressed: () =>
                             _openFileUrl(postData['file_url'].toString()),
@@ -334,10 +379,7 @@ class _PostDetailsScreenState extends State<PostDetailsScreen> {
             // Posted by Card
             const Text(
               'Posted by',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 10),
             Card(
@@ -351,10 +393,7 @@ class _PostDetailsScreenState extends State<PostDetailsScreen> {
                   children: [
                     CircleAvatar(
                       backgroundColor: Colors.blue.shade100,
-                      child: const Icon(
-                        Icons.person,
-                        color: Colors.blue,
-                      ),
+                      child: const Icon(Icons.person, color: Colors.blue),
                     ),
                     const SizedBox(width: 12),
                     Column(
@@ -381,6 +420,28 @@ class _PostDetailsScreenState extends State<PostDetailsScreen> {
                 ),
               ),
             ),
+
+            if (isProjectPost && !isMyPost && authorId != null) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => MessageScreen(
+                          receiverId: authorId,
+                          receiverName: studentName,
+                        ),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.message_outlined),
+                  label: const Text('Message Author'),
+                ),
+              ),
+            ],
 
             const SizedBox(height: 35),
 
